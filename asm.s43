@@ -1,0 +1,71 @@
+; #define controlled include file
+#include "msp430.h"
+
+
+        ; module name
+        NAME    main
+
+        ; make the main label visible
+        PUBLIC  main
+
+        ; Port 1 interrupt vector address
+        ORG     0FFE8h
+        ; Set Port 1 interrupt vector to 'irq' vector
+        DC16    irq
+
+        ; Reset interrupt vector address
+        ORG     0FFFEh
+        ; Set reset vector to 'init' label
+        DC16    init
+
+        ; Stack segment
+        RSEG    CSTACK
+        ; Program segment
+        RSEG    CODE
+
+
+; Port 1 interrupt
+irq:
+        ; Disable global interrupts
+        DINT
+        ; Test Pin 1.2
+        BIT.B   #0x04, P1IN
+        ; Clear interrupt flag for Pin 1.1
+        BIC.B   #0x02, P1IFG
+        ; Enable global interrupts
+        EINT
+        ; Return from interrupt
+        RETI
+
+
+; Initial setup
+init:
+        ; set up stack
+        MOV     #SFE(CSTACK), SP
+
+
+; Main program
+main:
+        ; Stop watchdog timer
+        MOV.W   #WDTPW+WDTHOLD,&WDTCTL
+
+        ; Enable global interrupts
+        EINT
+
+        ; Enable interrupts on Pin 1.1
+        MOV.B   #0x02, P1IE
+        ; Trigger on a high-to-low transition
+        MOV.B   #0x02, P1IES
+        ; Clear interrupt flag for Pin 1.1
+        BIC.B   #0x02, P1IFG
+
+        ; Initialize Port 2 output
+        CLR.B   P2OUT
+        ; Set all pins on Port 2 as outputs
+        MOV.B   #0xFF, P2DIR
+
+        ; jump to current location '$'
+        ; (endless loop)
+        JMP $
+
+        END
