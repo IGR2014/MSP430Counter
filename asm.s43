@@ -9,27 +9,85 @@
         PUBLIC  main
 
         ; Port 1 interrupt vector address
-        ORG     0FFE8h
-        ; Set Port 1 interrupt vector to 'irq' vector
-        DC16    irq
+        ORG     0x0FFE8
+        ; Set Port 1 interrupt vector to 'isr_port1' vector
+        DC16    isr_port1
 
         ; Reset interrupt vector address
-        ORG     0FFFEh
-        ; Set reset vector to 'init' label
-        DC16    init
+        ORG     0x0FFFE
+        ; Set reset vector to 'reset' label
+        DC16    reset
 
         ; Stack segment
         RSEG    CSTACK
+
         ; Program segment
         RSEG    CODE
 
 
-; Port 1 interrupt
-irq:
+; Output value to port
+output:
+        ; Move R4 value to Port 2
+        MOV.B   R4, P2OUT
+        ; Exit function
+        RET
+
+
+; BCD Count Upward
+bcdUpward:
+        ; Check if not maximum yet
+        CMP.B   #0x99,  R4
+        ; Do increment if not
+        JNZ     bcdInc
+        ; Exit function
+        RET
+; BCD Increment
+bcdInc:
+        ; Clear carry flag
+        CLRC
+        ; Add 1 to BCD value in R4
+        DADD.B  #0x01, R4
+        ; Exit function
+        RET
+
+
+; BCD Count Downward
+bcdDownward:
+        ; Check if not maximum yet
+        CMP.B   #0x00,  R4
+        ; Do decrement if not
+        JNZ     bcdDec
+        ; Exit function
+        RET
+; BCD Decrement
+bcdDec:
+        ; Clear carry flag
+        CLRC
+        ; Add 10'th compliment of 1 to BCD value in R4
+        DADD.B  #0x99, R4
+        ; Exit function
+        RET
+
+; Port 1 Interrupt Servicing Routine (ISR)
+isr_port1:
         ; Disable global interrupts
         DINT
         ; Test Pin 1.2
         BIT.B   #0x04, P1IN
+        ; Pin 1.2 is zero - go to bcdUpward
+        JZ      upward
+        ; Else call bcdDownward
+        CALL    #bcdDownward
+        ; Exit ISR
+        JMP     done
+; Upward
+upward:
+        ; Else call bcdUpward
+        CALL    #bcdUpward
+; Done
+done:
+        ; Output to Port 2
+        CALL    #output
         ; Clear interrupt flag for Pin 1.1
         BIC.B   #0x02, P1IFG
         ; Enable global interrupts
@@ -38,34 +96,35 @@ irq:
         RETI
 
 
-; Initial setup
-init:
-        ; set up stack
+; Controller setup after reset
+reset:
+        ; Set up stack pointer
         MOV     #SFE(CSTACK), SP
+        ; Clear counter
+        CLR     R4
 
 
 ; Main program
 main:
         ; Stop watchdog timer
         MOV.W   #WDTPW+WDTHOLD,&WDTCTL
-
         ; Enable global interrupts
         EINT
-
         ; Enable interrupts on Pin 1.1
         MOV.B   #0x02, P1IE
         ; Trigger on a high-to-low transition
         MOV.B   #0x02, P1IES
         ; Clear interrupt flag for Pin 1.1
         BIC.B   #0x02, P1IFG
-
         ; Initialize Port 2 output
         CLR.B   P2OUT
         ; Set all pins on Port 2 as outputs
         MOV.B   #0xFF, P2DIR
-
+        ; Output initial value to Port 2
+        CALL    #output
         ; jump to current location '$'
         ; (endless loop)
         JMP $
 
+        ; End of segment
         END
